@@ -28,7 +28,7 @@
 * [x] `SendMessage` RPC 구현
     * [x] 메시지를 받아 `[username]: message` 형식으로 포맷팅
     * [x] 방에 있는 **모든** 클라이언트에게 메시지 방송(Broadcast)
-* [ ] Server main 함수 작성
+* [x] Server main 함수 작성
 * [ ] 클라이언트 코드 
 ### 2단계: 개별 채팅방 구현
 

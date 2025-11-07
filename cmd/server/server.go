@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"sync"
 
 	pb "github.com/Gloveman/go-grpc-chat/chatpb"
+	"google.golang.org/grpc"
 )
 
 type server struct {
@@ -17,7 +19,24 @@ type server struct {
 }
 
 func main() {
+	lis, err := net.Listen("tcp", ":50001") //50001 포트에서 listen
+	if err != nil {
+		log.Fatalf("listen 실패: %v", err)
+	}
 
+	grpcServer := grpc.NewServer() //grpc 서버 생성
+
+	//server 구조체 생성
+	s := &server{
+		clients: make(map[string]pb.ChatService_JoinRoomServer),
+	}
+
+	pb.RegisterChatServiceServer(grpcServer, s)
+
+	log.Println("50001 포트에서 gRPC 서버 시작")
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("Serve 실패: %v", err)
+	}
 }
 
 func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer) error {
@@ -50,7 +69,7 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 }
 
 func (s *server) SendMessage(ctx context.Context, msg *pb.ChatMessage) (*pb.SendResponse, error) {
-	log.Printf("메시지 수신 [%s]: :%s", msg.SenderUserName, msg.MessageText)
+	log.Printf("메시지 수신 [%s]: %s", msg.SenderUserName, msg.MessageText)
 
 	s.mu.Lock()
 	for userName, stream := range s.clients {
