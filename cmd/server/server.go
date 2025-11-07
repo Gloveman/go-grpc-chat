@@ -50,5 +50,15 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 }
 
 func (s *server) SendMessage(ctx context.Context, msg *pb.ChatMessage) (*pb.SendResponse, error) {
+	log.Printf("메시지 수신 [%s]: :%s", msg.SenderUserName, msg.MessageText)
 
+	s.mu.Lock()
+	for userName, stream := range s.clients {
+		if err := stream.Send(msg); err != nil {
+			log.Printf("%s에게 메시지 전송 오류: %v", userName, err)
+		}
+	}
+	s.mu.Unlock()
+
+	return &pb.SendResponse{Success: true}, nil
 }

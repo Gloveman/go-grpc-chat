@@ -25,9 +25,11 @@
 * [x] `JoinRoom` RPC 구현
     * [x] 접속 시 `username` 설정 기능
     * [x] 서버가 클라이언트의 스트림을 관리 (단일 방)
-* [ ] `SendMessage` RPC 구현
-    * [ ] 메시지를 받아 `[username]: message` 형식으로 포맷팅
-    * [ ] 방에 있는 **모든** 클라이언트에게 메시지 방송(Broadcast) 
+* [x] `SendMessage` RPC 구현
+    * [x] 메시지를 받아 `[username]: message` 형식으로 포맷팅
+    * [x] 방에 있는 **모든** 클라이언트에게 메시지 방송(Broadcast)
+* [ ] Server main 함수 작성
+* [ ] 클라이언트 코드 
 ### 2단계: 개별 채팅방 구현
 
 사용자가 여러 개의 독립된 방을 생성하고 입장할 수 있도록 확장합니다.
