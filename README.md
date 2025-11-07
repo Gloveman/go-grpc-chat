@@ -22,9 +22,9 @@
 가장 기본적인 실시간 채팅 기능을 구현합니다. 
 * [x] gRPC 서버 및 클라이언트 기본 골격 설정
 * [x] Protobuf를 사용한 `ChatService` API 정의
-* [ ] `JoinRoom` RPC 구현
-    * [ ] 접속 시 `username` 설정 기능
-    * [ ] 서버가 클라이언트의 스트림을 관리 (단일 방)
+* [x] `JoinRoom` RPC 구현
+    * [x] 접속 시 `username` 설정 기능
+    * [x] 서버가 클라이언트의 스트림을 관리 (단일 방)
 * [ ] `SendMessage` RPC 구현
     * [ ] 메시지를 받아 `[username]: message` 형식으로 포맷팅
     * [ ] 방에 있는 **모든** 클라이언트에게 메시지 방송(Broadcast) 
