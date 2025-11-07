@@ -20,8 +20,8 @@
 ### 1단계: 실시간 채팅 구현 (참여자 전원에게 브로드캐스팅)
 
 가장 기본적인 실시간 채팅 기능을 구현합니다. 
-* [ ] gRPC 서버 및 클라이언트 기본 골격 설정
-* [ ] Protobuf를 사용한 `ChatService` API 정의
+* [x] gRPC 서버 및 클라이언트 기본 골격 설정
+* [x] Protobuf를 사용한 `ChatService` API 정의
 * [ ] `JoinRoom` RPC 구현
     * [ ] 접속 시 `username` 설정 기능
     * [ ] 서버가 클라이언트의 스트림을 관리 (단일 방)

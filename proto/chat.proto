@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package chat;
+option go_package="github.com/Gloveman/go-grpc-chat/chatpb";
+
+service ChatService {
+    // 채팅방 입장 - 서버에 입장 요청, 클라이언트에 메시지 스트림 반환
+    rpc JoinRoom(JoinRequest) returns (stream ChatMessage);
+    // 메시지 전송 - 메시지 전송 및 전송 결과 반환
+    rpc SendMessage(ChatMessage) returns (SendResponse);
+
+}
+
+message JoinRequest {
+    string user_name = 1;
+}
+
+message ChatMessage {
+    string sender_user_name = 1;
+    string message_text = 2;
+}
+
+message SendResponse {
+    bool success = 1;
+}
