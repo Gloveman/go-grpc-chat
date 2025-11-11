@@ -8,6 +8,7 @@ package chatpb
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -19,8 +20,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ChatService_JoinRoom_FullMethodName    = "/chat.ChatService/joinRoom"
-	ChatService_SendMessage_FullMethodName = "/chat.ChatService/sendMessage"
+	ChatService_JoinRoom_FullMethodName     = "/chat.ChatService/JoinRoom"
+	ChatService_SendMessage_FullMethodName  = "/chat.ChatService/SendMessage"
+	ChatService_GetRoomsInfo_FullMethodName = "/chat.ChatService/GetRoomsInfo"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -31,6 +33,8 @@ type ChatServiceClient interface {
 	JoinRoom(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChatMessage], error)
 	// 메시지 전송 - 메시지 전송 및 전송 결과 반환
 	SendMessage(ctx context.Context, in *ChatMessage, opts ...grpc.CallOption) (*SendResponse, error)
+	// 방 목록 조회
+	GetRoomsInfo(ctx context.Context, in *RoomsInfoRequest, opts ...grpc.CallOption) (*RoomsInfoResponse, error)
 }
 
 type chatServiceClient struct {
@@ -70,6 +74,16 @@ func (c *chatServiceClient) SendMessage(ctx context.Context, in *ChatMessage, op
 	return out, nil
 }
 
+func (c *chatServiceClient) GetRoomsInfo(ctx context.Context, in *RoomsInfoRequest, opts ...grpc.CallOption) (*RoomsInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RoomsInfoResponse)
+	err := c.cc.Invoke(ctx, ChatService_GetRoomsInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -78,6 +92,8 @@ type ChatServiceServer interface {
 	JoinRoom(*JoinRequest, grpc.ServerStreamingServer[ChatMessage]) error
 	// 메시지 전송 - 메시지 전송 및 전송 결과 반환
 	SendMessage(context.Context, *ChatMessage) (*SendResponse, error)
+	// 방 목록 조회
+	GetRoomsInfo(context.Context, *RoomsInfoRequest) (*RoomsInfoResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -93,6 +109,9 @@ func (UnimplementedChatServiceServer) JoinRoom(*JoinRequest, grpc.ServerStreamin
 }
 func (UnimplementedChatServiceServer) SendMessage(context.Context, *ChatMessage) (*SendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
+}
+func (UnimplementedChatServiceServer) GetRoomsInfo(context.Context, *RoomsInfoRequest) (*RoomsInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRoomsInfo not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -144,6 +163,24 @@ func _ChatService_SendMessage_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_GetRoomsInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RoomsInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).GetRoomsInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_GetRoomsInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).GetRoomsInfo(ctx, req.(*RoomsInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,13 +189,17 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ChatServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "sendMessage",
+			MethodName: "SendMessage",
 			Handler:    _ChatService_SendMessage_Handler,
+		},
+		{
+			MethodName: "GetRoomsInfo",
+			Handler:    _ChatService_GetRoomsInfo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "joinRoom",
+			StreamName:    "JoinRoom",
 			Handler:       _ChatService_JoinRoom_Handler,
 			ServerStreams: true,
 		},
