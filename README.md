@@ -36,11 +36,11 @@
    * [x] 방 정보를 담은 Message 추가
    * [x] JoinRequest에 방 번호와 방 이름 필드 추가
    * [x] 방 목록을 조회하는 GetRoomsInfo RPC 추가
-* [ ] 서버 리팩토링:
-    * [ ] clients 맵 수정 - Room 별로 클라이언트 스트림 관리
-    * [ ] JoinRoom 로직 수정 - 선택한 방으로 입장, 요청 시 새로운 방 생성
-    * [ ] SendMessage 로직 수정 - 해당 방으로만 broadcast
-    * [ ] GetRoomsInfo 구현 - 각 방 이름과 참여 인원 수 반환
+* [x] 서버 리팩토링:
+    * [x] clients 맵 수정 - Room 별로 클라이언트 스트림 관리
+    * [x] JoinRoom 로직 수정 - 선택한 방으로 입장, 요청 시 새로운 방 생성
+    * [x] SendMessage 로직 수정 - 해당 방으로만 broadcast
+    * [x] GetRoomsInfo 구현 - 각 방 이름과 참여 인원 수 반환
 * [ ] 클라이언트 리펙토링
     * [ ] '로비' 추가 (main 진입점) - 방 목록 표시, 방 입장 or 새로운 방 생성, 닉네임 변경 구현
     * [ ] 채팅 세션 분리
