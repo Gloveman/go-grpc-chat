@@ -43,8 +43,8 @@ func main() {
 
 	//사용자 이름 설정
 	fmt.Print("Enter your name: ")
-	userName, _ := reader.ReadString('\n')
-	userName = strings.TrimSpace(userName)
+	inputName, _ := reader.ReadString('\n')
+	userName = strings.TrimSpace(inputName)
 	log.Printf("%s님, 채팅 서비스에 오신 것을 환영합니다.", userName)
 
 	// '로비' 구현
@@ -67,7 +67,8 @@ func main() {
 		} else if input != "" {
 			roomID_num, err := strconv.Atoi(input)
 			if err != nil {
-
+				log.Println("오류: 방 번호는 숫자로 입력해야 합니다.")
+				continue
 			}
 			startChatSession(int32(roomID_num), "")
 		}
@@ -83,7 +84,10 @@ func startChatSession(roomId int32, roomName string) {
 		RoomName: roomName,
 	}
 
-	stream, err := grpcClient.JoinRoom(context.Background(), joinReq)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := grpcClient.JoinRoom(ctx, joinReq)
 	if err != nil {
 		log.Printf("방 입장 또는 생성에 실패했습니다.: %v", err)
 		return
@@ -100,7 +104,14 @@ func startChatSession(roomId int32, roomName string) {
 		log.Printf("새로운 방 [%d번: %s]이 생성되었습니다!", roomId, roomName)
 	}
 
-	log.Printf("[%s] 방에 입장했습니다. (나가려면 quit 입력)", roomName)
+	fmt.Printf("[%s]: %s\n", firstMsg.SenderUserName, firstMsg.MessageText)
+
+	secondMsg, err := stream.Recv()
+	if err != nil {
+		log.Printf("입장 알림 수신 실패: %v", err)
+	} else {
+		fmt.Printf("[%s]: %s\n", secondMsg.SenderUserName, secondMsg.MessageText)
+	}
 
 	go func() {
 		for {
@@ -120,7 +131,8 @@ func startChatSession(roomId int32, roomName string) {
 
 		if strings.ToLower(text) == "quit" {
 			log.Println("현재 방에서 퇴장합니다.")
-			stream.CloseSend()
+
+			cancel()
 			return
 		}
 
@@ -153,7 +165,7 @@ func printRoomsInfo() {
 	fmt.Printf("%-5s | %-20s | %s\n", "번호", "이름", "현재 인원")
 	fmt.Println("----------------------------------------")
 	for _, room := range roomsInfo.Rooms {
-		fmt.Printf("%-5d | %-20s | %-3d\n", room.RoomId, room.RoomName, room.ClientCount)
+		fmt.Printf("%-5d | %-20s | %-5d\n", room.RoomId, room.RoomName, room.ClientCount)
 	}
 	fmt.Println("----------------------------------------")
 }

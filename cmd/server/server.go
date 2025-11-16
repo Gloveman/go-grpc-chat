@@ -75,11 +75,29 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 			s.mu.Unlock()
 			return status.Errorf(codes.NotFound, "방 ID %d를 찾을 수 없습니다.", roomID)
 		}
+		roomName = targetRoom.Name
+		log.Printf("유저 [%s]가 기존 방 [%s](방 번호: %d)에 입장", userName, roomName, roomID)
 	}
 
 	targetRoom.Clients[userName] = srv
 	curRoomID := roomID
+	curRoomName := targetRoom.Name
 	s.mu.Unlock()
+	// 1. 먼저 입장한 유저에게만 환영 메시지 전송 (방 정보 포함)
+	welcomeMessage := &pb.ChatMessage{
+		SenderUserName: "서버",
+		MessageText:    fmt.Sprintf("[%s] 방에 입장했습니다. (방 번호: %d)", curRoomName, curRoomID),
+		RoomId:         curRoomID,
+	}
+
+	if err := srv.Send(welcomeMessage); err != nil {
+		log.Printf("환영 메시지 전송 실패: %v", err)
+		// 전송 실패 시 클라이언트 제거
+		s.mu.Lock()
+		delete(targetRoom.Clients, userName)
+		s.mu.Unlock()
+		return err
+	}
 
 	joinMessage := &pb.ChatMessage{
 		SenderUserName: "서버",
@@ -90,23 +108,37 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 
 	<-srv.Context().Done() //접속 종료 시까지 대기
 
+	log.Printf("유저 [%s] 연결 종료 감지", userName)
+
 	s.mu.Lock()
-	if room, ok := s.rooms[curRoomID]; ok {
-		delete(room.Clients, userName)
-		log.Printf("유저 [%s]가 방 [%s](방 번호: %d)에서 퇴장", userName, room.Name, curRoomID)
-		if len(room.Clients) == 0 { //모든 유저가 나간경우
-			delete(s.rooms, curRoomID)
-			log.Printf("방 [%s](방 번호: %d)가 삭제됨", room.Name, curRoomID)
-		}
+	room, ok := s.rooms[curRoomID]
+	if !ok {
+		s.mu.Unlock()
+		return nil
 	}
-	s.mu.Unlock()
+
+	delete(room.Clients, userName)
+	log.Printf("유저 [%s]가 방 [%s](방 번호: %d)에서 퇴장", userName, room.Name, curRoomID)
 
 	leaveMessage := &pb.ChatMessage{
 		SenderUserName: "서버",
-		MessageText:    fmt.Sprintf("%s 님이  퇴장했습니다.", userName),
+		MessageText:    fmt.Sprintf("%s 님이 퇴장했습니다.", userName),
 		RoomId:         curRoomID,
 	}
-	s.broadcastMessage(curRoomID, leaveMessage)
+
+	for clientName, stream := range room.Clients {
+		if err := stream.Send(leaveMessage); err != nil {
+			log.Printf("%s에게 퇴장 메시지 전송 오류: %v", clientName, err)
+		}
+	}
+
+	if len(room.Clients) == 0 {
+		delete(s.rooms, curRoomID)
+		log.Printf("방 [%s](방 번호: %d)가 삭제됨", room.Name, curRoomID)
+	}
+
+	s.mu.Unlock()
+
 	return nil
 }
 
@@ -123,14 +155,22 @@ func (s *server) broadcastMessage(roomID int32, msg *pb.ChatMessage) { // 해당
 
 	room, ok := s.rooms[roomID]
 	if !ok {
-		s.mu.Unlock()
 		log.Printf("Broadcast 오류: 방 %d를 찾을 수 없음", roomID)
+		return
 	}
+
+	var failedClients []string
 
 	for clientName, stream := range room.Clients {
 		if err := stream.Send(msg); err != nil {
 			log.Printf("%s에게 전송 오류 : %v", clientName, err)
+			failedClients = append(failedClients, clientName)
 		}
+	}
+
+	for _, clientName := range failedClients {
+		delete(room.Clients, clientName)
+		log.Printf("연결 끊김으로 인해 유저 [%s] 제거", clientName)
 	}
 }
 
