@@ -13,16 +13,24 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	defaultBufferSize = 100
+	maxBufferSize     = 500
+	minBufferSize     = 10
+)
+
 type Room struct {
-	Name    string                                   // 방 이름
-	Clients map[string]pb.ChatService_JoinRoomServer // 기존 Clients map과 동일
+	ID      int32
+	Name    string                          // 방 이름
+	Clients map[string]chan *pb.ChatMessage // Message channel로 재정의
+	mu      sync.RWMutex
 }
 type server struct {
 	pb.UnimplementedChatServiceServer
 
 	rooms map[int32]*Room // 방 ID : Room 구조체 map
 
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	nextRoomID int32 // 새로운 방 ID 발급을 위한 counter
 }
@@ -64,8 +72,9 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 		s.nextRoomID++
 
 		targetRoom = &Room{
+			ID:      roomID,
 			Name:    roomName,
-			Clients: make(map[string]pb.ChatService_JoinRoomServer),
+			Clients: make(map[string]chan *pb.ChatMessage),
 		}
 		s.rooms[roomID] = targetRoom
 		log.Printf("유저 [%s]가 새로운 방 [%s](방 번호: %d) 생성", userName, roomName, roomID)
@@ -78,112 +87,114 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 		roomName = targetRoom.Name
 		log.Printf("유저 [%s]가 기존 방 [%s](방 번호: %d)에 입장", userName, roomName, roomID)
 	}
-
-	targetRoom.Clients[userName] = srv
-	curRoomID := roomID
-	curRoomName := targetRoom.Name
 	s.mu.Unlock()
+	msgChan := make(chan *pb.ChatMessage, 100) // Buffer of 100
+
+	targetRoom.mu.Lock()
+	targetRoom.Clients[userName] = msgChan
+	targetRoom.mu.Unlock()
+
 	// 1. 먼저 입장한 유저에게만 환영 메시지 전송 (방 정보 포함)
 	welcomeMessage := &pb.ChatMessage{
 		SenderUserName: "서버",
-		MessageText:    fmt.Sprintf("[%s] 방에 입장했습니다. (방 번호: %d)", curRoomName, curRoomID),
-		RoomId:         curRoomID,
+		MessageText:    fmt.Sprintf("[%s] 방에 입장했습니다. (방 번호: %d)", roomName, roomID),
+		RoomId:         roomID,
 	}
 
-	if err := srv.Send(welcomeMessage); err != nil {
-		log.Printf("환영 메시지 전송 실패: %v", err)
-		// 전송 실패 시 클라이언트 제거
-		s.mu.Lock()
-		delete(targetRoom.Clients, userName)
-		s.mu.Unlock()
-		return err
+	select {
+	case msgChan <- welcomeMessage:
+	default:
 	}
 
 	joinMessage := &pb.ChatMessage{
 		SenderUserName: "서버",
 		MessageText:    fmt.Sprintf("%s 님이 입장했습니다.", userName),
-		RoomId:         curRoomID,
+		RoomId:         roomID,
 	}
-	s.broadcastMessage(curRoomID, joinMessage)
+	s.broadcastMessage(targetRoom, joinMessage)
 
-	<-srv.Context().Done() //접속 종료 시까지 대기
+	defer func() {
+		targetRoom.mu.Lock()
+		delete(targetRoom.Clients, userName)
+		isEmpty := len(targetRoom.Clients) == 0
+		targetRoom.mu.Unlock()
 
-	log.Printf("유저 [%s] 연결 종료 감지", userName)
+		log.Printf("유저 [%s]가 방 [%s](방 번호: %d)에서 퇴장", userName, roomName, roomID)
 
-	s.mu.Lock()
-	room, ok := s.rooms[curRoomID]
-	if !ok {
-		s.mu.Unlock()
-		return nil
-	}
-
-	delete(room.Clients, userName)
-	log.Printf("유저 [%s]가 방 [%s](방 번호: %d)에서 퇴장", userName, room.Name, curRoomID)
-
-	leaveMessage := &pb.ChatMessage{
-		SenderUserName: "서버",
-		MessageText:    fmt.Sprintf("%s 님이 퇴장했습니다.", userName),
-		RoomId:         curRoomID,
-	}
-
-	for clientName, stream := range room.Clients {
-		if err := stream.Send(leaveMessage); err != nil {
-			log.Printf("%s에게 퇴장 메시지 전송 오류: %v", clientName, err)
+		leaveMessage := &pb.ChatMessage{
+			SenderUserName: "서버",
+			MessageText:    fmt.Sprintf("%s 님이 퇴장했습니다.", userName),
+			RoomId:         roomID,
 		}
+		s.broadcastMessage(targetRoom, leaveMessage)
+		if isEmpty {
+			s.mu.Lock()
+			targetRoom.mu.RLock()
+			if len(targetRoom.Clients) == 0 { // Double Check!
+				delete(s.rooms, roomID)
+				log.Printf("방 [%s](방 번호: %d)가 삭제됨", roomName, roomID)
+			}
+			targetRoom.mu.RUnlock()
+			s.mu.Unlock()
+		}
+	}()
+
+	ctx := srv.Context()
+	for {
+		select {
+		case msg := <-msgChan:
+			if err := srv.Send(msg); err != nil {
+				log.Printf("유저 [%s]에게 메시지 전송 실패: %v", userName, err)
+				return err
+			}
+		case <-ctx.Done():
+			log.Printf("유저 [%s] 연결 종료 감지", userName)
+			return nil
+		}
+
 	}
 
-	if len(room.Clients) == 0 {
-		delete(s.rooms, curRoomID)
-		log.Printf("방 [%s](방 번호: %d)가 삭제됨", room.Name, curRoomID)
-	}
-
-	s.mu.Unlock()
-
-	return nil
 }
 
 func (s *server) SendMessage(ctx context.Context, msg *pb.ChatMessage) (*pb.SendResponse, error) {
 	roomID := msg.GetRoomId()
+	s.mu.RLock()
+	room, ok := s.rooms[roomID]
+	s.mu.RUnlock()
+	if !ok {
+		log.Printf("SendMessage 오류: 방 %d를 찾을 수 없음", roomID)
+		return &pb.SendResponse{Success: false}, status.Errorf(codes.NotFound, "Room not found")
+	}
 	log.Printf("메시지 수신 (방 번호 : %d) [%s]: %s", roomID, msg.SenderUserName, msg.MessageText)
-	s.broadcastMessage(roomID, msg)
+	s.broadcastMessage(room, msg)
 	return &pb.SendResponse{Success: true}, nil
 }
 
-func (s *server) broadcastMessage(roomID int32, msg *pb.ChatMessage) { // 해당 방의 모두에게 메시지 전송
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	room, ok := s.rooms[roomID]
-	if !ok {
-		log.Printf("Broadcast 오류: 방 %d를 찾을 수 없음", roomID)
-		return
-	}
-
-	var failedClients []string
-
-	for clientName, stream := range room.Clients {
-		if err := stream.Send(msg); err != nil {
-			log.Printf("%s에게 전송 오류 : %v", clientName, err)
-			failedClients = append(failedClients, clientName)
+func (s *server) broadcastMessage(room *Room, msg *pb.ChatMessage) { // 해당 방의 모두에게 메시지 전송
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+	for name, ch := range room.Clients {
+		select {
+		case ch <- msg:
+		default:
+			log.Printf("유저 [%s]의 수신 버퍼가 가득 찼습니다. 메시지를 드롭합니다.", name)
 		}
-	}
-
-	for _, clientName := range failedClients {
-		delete(room.Clients, clientName)
-		log.Printf("연결 끊김으로 인해 유저 [%s] 제거", clientName)
 	}
 }
 
 func (s *server) GetRoomsInfo(ctx context.Context, req *pb.RoomsInfoRequest) (*pb.RoomsInfoResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	var roomInfos []*pb.RoomInfo
 	for roomID, room := range s.rooms {
+		room.mu.RLock()
+		count := int32(len(room.Clients))
+		room.mu.RUnlock()
 		roomInfos = append(roomInfos, &pb.RoomInfo{
 			RoomId:      roomID,
 			RoomName:    room.Name,
-			ClientCount: int32(len(room.Clients)),
+			ClientCount: count,
 		})
 	}
 	return &pb.RoomsInfoResponse{Rooms: roomInfos}, nil
