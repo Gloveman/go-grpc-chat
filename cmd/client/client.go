@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	pb "github.com/Gloveman/go-grpc-chat/chatpb"
 
@@ -93,7 +94,7 @@ func startChatSession(roomId int32, roomName string) {
 		return
 	}
 
-	firstMsg, err := stream.Recv()
+	firstMsg, err := stream.Recv() //최초 수신을 통해 방 번호를 가져옴
 	if err != nil {
 		log.Printf("방 입장 실패 (서버 응답 없음): %v", err)
 		return
@@ -106,18 +107,12 @@ func startChatSession(roomId int32, roomName string) {
 
 	fmt.Printf("[%s]: %s\n", firstMsg.SenderUserName, firstMsg.MessageText)
 
-	secondMsg, err := stream.Recv()
-	if err != nil {
-		log.Printf("입장 알림 수신 실패: %v", err)
-	} else {
-		fmt.Printf("[%s]: %s\n", secondMsg.SenderUserName, secondMsg.MessageText)
-	}
-
 	go func() {
 		for {
 			msg, err := stream.Recv()
 			if err != nil {
 				log.Printf("서버와 연결이 종료되었습니다. (로비로 돌아갑니다)")
+				cancel() //input loop 중지
 				return
 			}
 			fmt.Printf("[%s]: %s\n", msg.SenderUserName, msg.MessageText)
@@ -126,26 +121,35 @@ func startChatSession(roomId int32, roomName string) {
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
+		//서버 연결이 끊어졌는지 확인
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		text, _ := reader.ReadString('\n')
 		text = strings.TrimSpace(text)
 
+		//연결 상태 다시 검사
+		if ctx.Err() != nil {
+			return
+		}
 		if strings.ToLower(text) == "quit" {
 			log.Println("현재 방에서 퇴장합니다.")
-
-			cancel()
 			return
 		}
 
 		if text == "" {
 			continue
 		}
-
-		_, err := grpcClient.SendMessage(context.Background(), &pb.ChatMessage{
+		//메세지 전송에 Timeout 적용
+		sendCtx, sendCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := grpcClient.SendMessage(sendCtx, &pb.ChatMessage{
 			SenderUserName: userName,
 			MessageText:    text,
 			RoomId:         roomId,
 		})
-
+		sendCancel()
 		if err != nil {
 			log.Printf("메시지 전송 실패: %v", err)
 		}
@@ -153,7 +157,11 @@ func startChatSession(roomId int32, roomName string) {
 }
 
 func printRoomsInfo() {
-	roomsInfo, err := grpcClient.GetRoomsInfo(context.Background(), &pb.RoomsInfoRequest{})
+	//방 목록 조회에 Timeout 적용
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	roomsInfo, err := grpcClient.GetRoomsInfo(ctx, &pb.RoomsInfoRequest{})
 	if err != nil {
 		log.Printf("방 목록을 가져오지 못했습니다. 오류: %v", err)
 	}
