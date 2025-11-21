@@ -39,7 +39,7 @@ type ChatServiceClient interface {
 	GetAllUsers(ctx context.Context, in *AllUsersRequest, opts ...grpc.CallOption) (*AllUsersResponse, error)
 	// 채팅방: 방 입장 & 방 내부 유저 리스트 조회
 	JoinRoom(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChatMessage], error)
-	GetRoomUsers(ctx context.Context, in *RoomUsersRequest, opts ...grpc.CallOption) (*RoomUsersRequest, error)
+	GetRoomUsers(ctx context.Context, in *RoomUsersRequest, opts ...grpc.CallOption) (*RoomUsersResponse, error)
 	// 메시지 전송 - 메시지 전송 및 전송 결과 반환
 	SendMessage(ctx context.Context, in *ChatMessage, opts ...grpc.CallOption) (*SendResponse, error)
 }
@@ -110,9 +110,9 @@ func (c *chatServiceClient) JoinRoom(ctx context.Context, in *JoinRequest, opts 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ChatService_JoinRoomClient = grpc.ServerStreamingClient[ChatMessage]
 
-func (c *chatServiceClient) GetRoomUsers(ctx context.Context, in *RoomUsersRequest, opts ...grpc.CallOption) (*RoomUsersRequest, error) {
+func (c *chatServiceClient) GetRoomUsers(ctx context.Context, in *RoomUsersRequest, opts ...grpc.CallOption) (*RoomUsersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RoomUsersRequest)
+	out := new(RoomUsersResponse)
 	err := c.cc.Invoke(ctx, ChatService_GetRoomUsers_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ type ChatServiceServer interface {
 	GetAllUsers(context.Context, *AllUsersRequest) (*AllUsersResponse, error)
 	// 채팅방: 방 입장 & 방 내부 유저 리스트 조회
 	JoinRoom(*JoinRequest, grpc.ServerStreamingServer[ChatMessage]) error
-	GetRoomUsers(context.Context, *RoomUsersRequest) (*RoomUsersRequest, error)
+	GetRoomUsers(context.Context, *RoomUsersRequest) (*RoomUsersResponse, error)
 	// 메시지 전송 - 메시지 전송 및 전송 결과 반환
 	SendMessage(context.Context, *ChatMessage) (*SendResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
@@ -166,7 +166,7 @@ func (UnimplementedChatServiceServer) GetAllUsers(context.Context, *AllUsersRequ
 func (UnimplementedChatServiceServer) JoinRoom(*JoinRequest, grpc.ServerStreamingServer[ChatMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method JoinRoom not implemented")
 }
-func (UnimplementedChatServiceServer) GetRoomUsers(context.Context, *RoomUsersRequest) (*RoomUsersRequest, error) {
+func (UnimplementedChatServiceServer) GetRoomUsers(context.Context, *RoomUsersRequest) (*RoomUsersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRoomUsers not implemented")
 }
 func (UnimplementedChatServiceServer) SendMessage(context.Context, *ChatMessage) (*SendResponse, error) {

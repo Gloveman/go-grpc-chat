@@ -5,7 +5,7 @@ option go_package="github.com/Gloveman/go-grpc-chat/chatpb";
 
 service ChatService {
     //Global 서버 접속 & DM 수신
-    rpc Connect(ConnectRequest) returns (ChatMessage);
+    rpc Connect(ConnectRequest) returns (stream ChatMessage);
 
     //로비: 방 목록 조회 & 전체 유저 리스트 조회
     rpc GetRoomsInfo(RoomsInfoRequest) returns (RoomsInfoResponse);
@@ -13,7 +13,7 @@ service ChatService {
 
     // 채팅방: 방 입장 & 방 내부 유저 리스트 조회
     rpc JoinRoom(JoinRequest) returns (stream ChatMessage);
-    rpc GetRoomUsers(RoomUsersRequest) returns (RoomUsersRequest);
+    rpc GetRoomUsers(RoomUsersRequest) returns (RoomUsersResponse);
     // 메시지 전송 - 메시지 전송 및 전송 결과 반환
     rpc SendMessage(ChatMessage) returns (SendResponse);
 }
@@ -45,7 +45,9 @@ message AllUsersResponse {
 }
 message RoomUsersRequest {
 }
-
+message RoomUsersResponse {
+    repeated UserInfo users = 1;
+}
 
 message JoinRequest {
     string user_name = 1;
