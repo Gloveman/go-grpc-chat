@@ -632,27 +632,9 @@ const file_proto_chat_proto_rawDesc = "" +
 	"\aroom_id\x18\x14 \x01(\x05R\x06roomId\x12$\n" +
 	"\x0etarget_user_id\x18\x15 \x01(\tR\ftargetUserId\"(\n" +
 	"\fSendResponse\x12\x18\n" +
-<<<<<<< HEAD
 	"\asuccess\x18\x01 \x01(\bR\asuccess2\xed\x02\n" +
 	"\vChatService\x124\n" +
 	"\aConnect\x12\x14.chat.ConnectRequest\x1a\x11.chat.ChatMessage0\x01\x12?\n" +
-=======
-<<<<<<< HEAD
-	"\asuccess\x18\x01 \x01(\bR\asuccess2\xed\x02\n" +
-	"\vChatService\x124\n" +
-	"\aConnect\x12\x14.chat.ConnectRequest\x1a\x11.chat.ChatMessage0\x01\x12?\n" +
-=======
-<<<<<<< HEAD
-	"\asuccess\x18\x01 \x01(\bR\asuccess2\xec\x02\n" +
-	"\vChatService\x124\n" +
-	"\aConnect\x12\x14.chat.ConnectRequest\x1a\x11.chat.ChatMessage0\x01\x12?\n" +
-=======
-	"\asuccess\x18\x01 \x01(\bR\asuccess2\xea\x02\n" +
-	"\vChatService\x122\n" +
-	"\aConnect\x12\x14.chat.ConnectRequest\x1a\x11.chat.ChatMessage\x12?\n" +
->>>>>>> fb965b8e1161bf965ac97e4be744f2ae31216672
->>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
->>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 	"\fGetRoomsInfo\x12\x16.chat.RoomsInfoRequest\x1a\x17.chat.RoomsInfoResponse\x12<\n" +
 	"\vGetAllUsers\x12\x15.chat.AllUsersRequest\x1a\x16.chat.AllUsersResponse\x122\n" +
 	"\bJoinRoom\x12\x11.chat.JoinRequest\x1a\x11.chat.ChatMessage0\x01\x12?\n" +
