@@ -33,7 +33,19 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ChatServiceClient interface {
 	// Global 서버 접속 & DM 수신
+<<<<<<< HEAD
 	Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChatMessage], error)
+=======
+<<<<<<< HEAD
+	Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChatMessage], error)
+=======
+<<<<<<< HEAD
+	Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChatMessage], error)
+=======
+	Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (*ChatMessage, error)
+>>>>>>> fb965b8e1161bf965ac97e4be744f2ae31216672
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 	// 로비: 방 목록 조회 & 전체 유저 리스트 조회
 	GetRoomsInfo(ctx context.Context, in *RoomsInfoRequest, opts ...grpc.CallOption) (*RoomsInfoResponse, error)
 	GetAllUsers(ctx context.Context, in *AllUsersRequest, opts ...grpc.CallOption) (*AllUsersResponse, error)
@@ -52,6 +64,13 @@ func NewChatServiceClient(cc grpc.ClientConnInterface) ChatServiceClient {
 	return &chatServiceClient{cc}
 }
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 func (c *chatServiceClient) Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChatMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ChatService_ServiceDesc.Streams[0], ChatService_Connect_FullMethodName, cOpts...)
@@ -71,6 +90,24 @@ func (c *chatServiceClient) Connect(ctx context.Context, in *ConnectRequest, opt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ChatService_ConnectClient = grpc.ServerStreamingClient[ChatMessage]
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+=======
+func (c *chatServiceClient) Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (*ChatMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChatMessage)
+	err := c.cc.Invoke(ctx, ChatService_Connect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+>>>>>>> fb965b8e1161bf965ac97e4be744f2ae31216672
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 func (c *chatServiceClient) GetRoomsInfo(ctx context.Context, in *RoomsInfoRequest, opts ...grpc.CallOption) (*RoomsInfoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RoomsInfoResponse)
@@ -135,7 +172,19 @@ func (c *chatServiceClient) SendMessage(ctx context.Context, in *ChatMessage, op
 // for forward compatibility.
 type ChatServiceServer interface {
 	// Global 서버 접속 & DM 수신
+<<<<<<< HEAD
 	Connect(*ConnectRequest, grpc.ServerStreamingServer[ChatMessage]) error
+=======
+<<<<<<< HEAD
+	Connect(*ConnectRequest, grpc.ServerStreamingServer[ChatMessage]) error
+=======
+<<<<<<< HEAD
+	Connect(*ConnectRequest, grpc.ServerStreamingServer[ChatMessage]) error
+=======
+	Connect(context.Context, *ConnectRequest) (*ChatMessage, error)
+>>>>>>> fb965b8e1161bf965ac97e4be744f2ae31216672
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 	// 로비: 방 목록 조회 & 전체 유저 리스트 조회
 	GetRoomsInfo(context.Context, *RoomsInfoRequest) (*RoomsInfoResponse, error)
 	GetAllUsers(context.Context, *AllUsersRequest) (*AllUsersResponse, error)
@@ -154,8 +203,23 @@ type ChatServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedChatServiceServer struct{}
 
+<<<<<<< HEAD
 func (UnimplementedChatServiceServer) Connect(*ConnectRequest, grpc.ServerStreamingServer[ChatMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
+=======
+<<<<<<< HEAD
+func (UnimplementedChatServiceServer) Connect(*ConnectRequest, grpc.ServerStreamingServer[ChatMessage]) error {
+	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
+=======
+<<<<<<< HEAD
+func (UnimplementedChatServiceServer) Connect(*ConnectRequest, grpc.ServerStreamingServer[ChatMessage]) error {
+	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
+=======
+func (UnimplementedChatServiceServer) Connect(context.Context, *ConnectRequest) (*ChatMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Connect not implemented")
+>>>>>>> fb965b8e1161bf965ac97e4be744f2ae31216672
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 }
 func (UnimplementedChatServiceServer) GetRoomsInfo(context.Context, *RoomsInfoRequest) (*RoomsInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRoomsInfo not implemented")
@@ -193,6 +257,13 @@ func RegisterChatServiceServer(s grpc.ServiceRegistrar, srv ChatServiceServer) {
 	s.RegisterService(&ChatService_ServiceDesc, srv)
 }
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 func _ChatService_Connect_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(ConnectRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -203,6 +274,31 @@ func _ChatService_Connect_Handler(srv interface{}, stream grpc.ServerStream) err
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ChatService_ConnectServer = grpc.ServerStreamingServer[ChatMessage]
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+=======
+func _ChatService_Connect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConnectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).Connect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_Connect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).Connect(ctx, req.(*ConnectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+>>>>>>> fb965b8e1161bf965ac97e4be744f2ae31216672
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 
 func _ChatService_GetRoomsInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RoomsInfoRequest)
@@ -295,6 +391,19 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ChatServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+			MethodName: "Connect",
+			Handler:    _ChatService_Connect_Handler,
+		},
+		{
+>>>>>>> fb965b8e1161bf965ac97e4be744f2ae31216672
+>>>>>>> 04ab50e91ba646a5f4db51bb8ac3ed77f98d99f6
+>>>>>>> d0425a8a49d4b04e1a2a67f653b37c81283e2d99
 			MethodName: "GetRoomsInfo",
 			Handler:    _ChatService_GetRoomsInfo_Handler,
 		},
