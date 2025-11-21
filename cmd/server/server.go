@@ -5,18 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"sync"
 
 	pb "github.com/Gloveman/go-grpc-chat/chatpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-)
-
-const (
-	defaultBufferSize = 100
-	maxBufferSize     = 500
-	minBufferSize     = 10
 )
 
 type Room struct {
@@ -28,9 +23,11 @@ type Room struct {
 type server struct {
 	pb.UnimplementedChatServiceServer
 
-	rooms map[int32]*Room // 방 ID : Room 구조체 map
+	globalUsers map[string]chan *pb.ChatMessage
+	userMu      sync.RWMutex
 
-	mu sync.RWMutex
+	rooms   map[int32]*Room // 방 ID : Room 구조체 map
+	roomsMu sync.RWMutex
 
 	nextRoomID int32 // 새로운 방 ID 발급을 위한 counter
 }
@@ -45,8 +42,9 @@ func main() {
 
 	//server 구조체 생성
 	s := &server{
-		rooms:      make(map[int32]*Room),
-		nextRoomID: 1, //방 번호는 1번부터 시작
+		globalUsers: make(map[string]chan *pb.ChatMessage),
+		rooms:       make(map[int32]*Room),
+		nextRoomID:  1, //방 번호는 1번부터 시작
 	}
 
 	pb.RegisterChatServiceServer(grpcServer, s)
@@ -57,12 +55,58 @@ func main() {
 	}
 }
 
+func (s *server) Connect(req *pb.ConnectRequest, srv pb.ChatService_ConnectServer) error {
+	userName := req.GetUserName()
+
+	s.userMu.Lock()
+	if _, exists := s.globalUsers[userName]; exists {
+		s.userMu.Unlock()
+		return status.Errorf(codes.AlreadyExists, "이미 접속 중인 닉네임입니다: %s", userName)
+	}
+
+	dmChan := make(chan *pb.ChatMessage, 100)
+	s.globalUsers[userName] = dmChan
+	s.userMu.Unlock()
+
+	log.Printf("유저 [%s] 서버 접속", userName)
+
+	testMsg := &pb.ChatMessage{
+		SenderUserName: "서버",
+		MessageText:    "Connected",
+	}
+	if err := srv.Send(testMsg); err != nil {
+		s.userMu.Lock()
+		delete(s.globalUsers, userName)
+		s.userMu.Unlock()
+		return err
+	}
+
+	defer func() {
+		s.userMu.Lock()
+		delete(s.globalUsers, userName)
+		s.userMu.Unlock()
+		log.Printf("유저 [%s] 서버 접속 종료", userName)
+	}()
+
+	ctx := srv.Context()
+	for {
+		select {
+		case msg := <-dmChan:
+			if err := srv.Send(msg); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
 func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer) error {
 	userName := req.GetUserName()
 	roomID := req.GetRoomId()
 	roomName := req.GetRoomName()
 
-	s.mu.Lock()
+	s.roomsMu.Lock()
 
 	var targetRoom *Room
 	var ok bool
@@ -81,17 +125,17 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 	} else { //기존 방 입장
 		targetRoom, ok = s.rooms[roomID]
 		if !ok {
-			s.mu.Unlock()
+			s.roomsMu.Unlock()
 			return status.Errorf(codes.NotFound, "방 ID %d를 찾을 수 없습니다.", roomID)
 		}
 		roomName = targetRoom.Name
 		log.Printf("유저 [%s]가 기존 방 [%s](방 번호: %d)에 입장", userName, roomName, roomID)
 	}
-	s.mu.Unlock()
-	msgChan := make(chan *pb.ChatMessage, 100) // Buffer of 100
+	s.roomsMu.Unlock()
+	roomMsgChan := make(chan *pb.ChatMessage, 100) // Buffer of 100
 
 	targetRoom.mu.Lock()
-	targetRoom.Clients[userName] = msgChan
+	targetRoom.Clients[userName] = roomMsgChan
 	targetRoom.mu.Unlock()
 
 	// 1. 먼저 입장한 유저에게만 환영 메시지 전송 (방 정보 포함)
@@ -102,7 +146,7 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 	}
 
 	select {
-	case msgChan <- welcomeMessage:
+	case roomMsgChan <- welcomeMessage:
 	default:
 	}
 
@@ -128,21 +172,21 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 		}
 		s.broadcastMessage(targetRoom, leaveMessage)
 		if isEmpty {
-			s.mu.Lock()
+			s.roomsMu.Lock()
 			targetRoom.mu.RLock()
 			if len(targetRoom.Clients) == 0 { // Double Check!
 				delete(s.rooms, roomID)
 				log.Printf("방 [%s](방 번호: %d)가 삭제됨", roomName, roomID)
 			}
 			targetRoom.mu.RUnlock()
-			s.mu.Unlock()
+			s.roomsMu.Unlock()
 		}
 	}()
 
 	ctx := srv.Context()
 	for {
 		select {
-		case msg := <-msgChan:
+		case msg := <-roomMsgChan:
 			if err := srv.Send(msg); err != nil {
 				log.Printf("유저 [%s]에게 메시지 전송 실패: %v", userName, err)
 				return err
@@ -157,10 +201,30 @@ func (s *server) JoinRoom(req *pb.JoinRequest, srv pb.ChatService_JoinRoomServer
 }
 
 func (s *server) SendMessage(ctx context.Context, msg *pb.ChatMessage) (*pb.SendResponse, error) {
+	//DM인 경우
+	if msg.TargetUserId != "" {
+		targetUser := msg.TargetUserId
+		s.userMu.RLock()
+		targetChan, ok := s.globalUsers[targetUser]
+		s.userMu.RUnlock()
+
+		if !ok {
+			return &pb.SendResponse{Success: false}, nil
+		}
+
+		//msg.MessageText = fmt.Sprintf()
+		select {
+		case targetChan <- msg:
+			return &pb.SendResponse{Success: true}, nil
+		default:
+			return &pb.SendResponse{Success: false}, status.Error(codes.ResourceExhausted, "Buffer full")
+		}
+	}
+	//일반 메세지인 경우
 	roomID := msg.GetRoomId()
-	s.mu.RLock()
+	s.roomsMu.RLock()
 	room, ok := s.rooms[roomID]
-	s.mu.RUnlock()
+	s.roomsMu.RUnlock()
 	if !ok {
 		log.Printf("SendMessage 오류: 방 %d를 찾을 수 없음", roomID)
 		return &pb.SendResponse{Success: false}, status.Errorf(codes.NotFound, "Room not found")
@@ -183,8 +247,8 @@ func (s *server) broadcastMessage(room *Room, msg *pb.ChatMessage) { // 해당 �
 }
 
 func (s *server) GetRoomsInfo(ctx context.Context, req *pb.RoomsInfoRequest) (*pb.RoomsInfoResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.roomsMu.RLock()
+	defer s.roomsMu.RUnlock()
 
 	var roomInfos []*pb.RoomInfo
 	for roomID, room := range s.rooms {
@@ -198,4 +262,44 @@ func (s *server) GetRoomsInfo(ctx context.Context, req *pb.RoomsInfoRequest) (*p
 		})
 	}
 	return &pb.RoomsInfoResponse{Rooms: roomInfos}, nil
+}
+
+func (s *server) GetAllUsers(ctx context.Context, req *pb.AllUsersRequest) (*pb.AllUsersResponse, error) {
+	s.userMu.RLock()
+	defer s.userMu.RUnlock()
+
+	var users []*pb.UserInfo
+	for name := range s.globalUsers {
+		users = append(users, &pb.UserInfo{UserName: name})
+	}
+	//이름 순으로 정렬
+	sort.Slice(users, func(i, j int) bool {
+		return users[i].UserName < users[j].UserName
+	})
+	return &pb.AllUsersResponse{Users: users}, nil
+}
+
+func (s *server) GetRoomUsers(ctx context.Context, req *pb.RoomUsersRequest) (*pb.RoomUsersResponse, error) {
+	roomID := req.GetRoomId()
+
+	s.roomsMu.RLock()
+	room, ok := s.rooms[roomID]
+	s.roomsMu.RUnlock()
+
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "방 ID %d를 찾을 수 없습니다.", roomID)
+	}
+
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+
+	var users []*pb.UserInfo
+	for name := range room.Clients {
+		users = append(users, &pb.UserInfo{UserName: name})
+	}
+	sort.Slice(users, func(i, j int) bool {
+		return users[i].UserName < users[j].UserName
+	})
+	return &pb.RoomUsersResponse{Users: users}, nil
+
 }
