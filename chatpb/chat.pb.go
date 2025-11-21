@@ -331,6 +331,7 @@ func (x *AllUsersResponse) GetUsers() []*UserInfo {
 
 type RoomUsersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        int32                  `protobuf:"varint,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -363,6 +364,13 @@ func (x *RoomUsersRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RoomUsersRequest.ProtoReflect.Descriptor instead.
 func (*RoomUsersRequest) Descriptor() ([]byte, []int) {
 	return file_proto_chat_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RoomUsersRequest) GetRoomId() int32 {
+	if x != nil {
+		return x.RoomId
+	}
+	return 0
 }
 
 type RoomUsersResponse struct {
@@ -607,8 +615,9 @@ const file_proto_chat_proto_rawDesc = "" +
 	"\tuser_name\x18\x01 \x01(\tR\buserName\"\x11\n" +
 	"\x0fAllUsersRequest\"8\n" +
 	"\x10AllUsersResponse\x12$\n" +
-	"\x05users\x18\x01 \x03(\v2\x0e.chat.UserInfoR\x05users\"\x12\n" +
-	"\x10RoomUsersRequest\"9\n" +
+	"\x05users\x18\x01 \x03(\v2\x0e.chat.UserInfoR\x05users\"+\n" +
+	"\x10RoomUsersRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\x05R\x06roomId\"9\n" +
 	"\x11RoomUsersResponse\x12$\n" +
 	"\x05users\x18\x01 \x03(\v2\x0e.chat.UserInfoR\x05users\"`\n" +
 	"\vJoinRequest\x12\x1b\n" +

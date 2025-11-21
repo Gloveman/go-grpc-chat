@@ -44,6 +44,7 @@ message AllUsersResponse {
     repeated UserInfo users = 1;
 }
 message RoomUsersRequest {
+    int32 room_id = 1;
 }
 message RoomUsersResponse {
     repeated UserInfo users = 1;
