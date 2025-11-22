@@ -25,37 +25,103 @@ var (
 func main() {
 	reader := bufio.NewReader(os.Stdin)
 
-	//접속할 서버 주소 입력
-	fmt.Print("Enter Server IP: ")
-	serverIP, _ := reader.ReadString('\n')
-	serverIP = strings.TrimSpace(serverIP)
+	var conn *grpc.ClientConn
+	var err error
+	for {
+		//접속할 서버 주소 입력
+		fmt.Print("Enter Server IP(default:localhost): ")
+		serverIP, _ := reader.ReadString('\n')
+		serverIP = strings.TrimSpace(serverIP)
+		if serverIP == "" {
+			serverIP = "localhost"
+		}
+		serverAddress := fmt.Sprintf("%s:50001", serverIP)
+		log.Printf("%s 접속중.....", serverAddress)
 
-	serverAddress := fmt.Sprintf("%s:50001", serverIP)
-	log.Printf("%s 접속중.....", serverAddress)
+		conn, err = grpc.NewClient(serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Fatalf("Failed to connect: %v", err)
+			continue
+		}
+		//ChatService의 gRPC 클라이언트 생성
+		grpcClient = pb.NewChatServiceClient(conn)
 
-	conn, err := grpc.NewClient(serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatalf("Failed to connect: %v", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		_, err = grpcClient.GetRoomsInfo(ctx, &pb.RoomsInfoRequest{})
+		cancel()
+
+		if err != nil {
+			conn.Close() // 실패한 연결 닫기
+			fmt.Printf("❌ 서버 접속 실패: %v\nIP를 다시 확인해주세요.\n\n", err)
+			continue
+		}
+
+		log.Println("✅ 서버 연결 성공!")
+		break // 연결 성공 시 루프 탈출
 	}
-	defer conn.Close() // main 함수 종료 시 연결 종료
+	defer conn.Close()
 
-	//ChatService의 gRPC 클라이언트 생성
-	grpcClient = pb.NewChatServiceClient(conn)
-
+	var connectStream pb.ChatService_ConnectClient
 	//사용자 이름 설정
-	fmt.Print("Enter your name: ")
-	inputName, _ := reader.ReadString('\n')
-	userName = strings.TrimSpace(inputName)
-	log.Printf("%s님, 채팅 서비스에 오신 것을 환영합니다.", userName)
-
+	for {
+		fmt.Print("Enter your name: ")
+		inputName, _ := reader.ReadString('\n')
+		inputName = strings.TrimSpace(inputName)
+		if inputName == "" {
+			log.Printf("오류: 닉네임을 입력하지 않았습니다.")
+			continue
+		}
+		connectStream, err = grpcClient.Connect(context.Background(), &pb.ConnectRequest{UserName: inputName})
+		if err != nil {
+			log.Printf("오류: %v", err)
+			continue
+		}
+		_, err = connectStream.Recv()
+		if err != nil {
+			log.Printf("오류: %v", err)
+			continue
+		}
+		userName = inputName
+		log.Printf("%s님, 채팅 서비스에 오신 것을 환영합니다.", userName)
+		printRoomsInfo()
+		break
+	}
+	//DM 수신
+	go func() {
+		for {
+			msg, err := connectStream.Recv()
+			if err != nil {
+				log.Fatal("서버 연결이 끊어졌습니다")
+			}
+			if msg.SenderUserId != "서버" {
+				fmt.Printf("\n[DM from %s]: %s\n> ", msg.SenderUserName, msg.MessageText)
+			}
+		}
+	}()
 	// '로비' 구현
 	for {
-		printRoomsInfo()
+		time.Sleep(300 * time.Millisecond)
 
-		fmt.Print("입장할 방 번호를 입력하세요(create [방 이름]으로 새로 만들기 가능, 종료 시 'quit' 입력): ")
+		fmt.Print("\n명령어 입력(help로 명령어 목록 확인): ")
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
+		if strings.ToLower(input) == "help" {
+			printLobbyHelp()
+			continue
+		}
+		if strings.HasPrefix(input, "w ") {
+			sendDM(input)
+			continue
+		}
+		if strings.ToLower(input) == "users" {
+			printAllUsers()
+			continue
+		}
+		if strings.ToLower(input) == "list" {
+			printRoomsInfo()
+			continue
+		}
 		if strings.HasPrefix(strings.ToLower(input), "create ") {
 			roomName := input[7:]
 			if roomName == "" {
@@ -63,19 +129,21 @@ func main() {
 				continue
 			}
 			startChatSession(0, roomName)
-		} else if strings.ToLower(input) == "quit" {
-			break
-		} else if input != "" {
-			roomID_num, err := strconv.Atoi(input)
+		}
+		if strings.HasPrefix(strings.ToLower(input), "join ") {
+			roomID_num, err := strconv.Atoi(input[5:])
 			if err != nil {
 				log.Println("오류: 방 번호는 숫자로 입력해야 합니다.")
 				continue
 			}
 			startChatSession(int32(roomID_num), "")
 		}
-
+		if strings.ToLower(input) == "quit" {
+			break
+		}
 	}
 	log.Println("채팅 서비스를 종료합니다. 이용해주셔서 감사합니다.")
+	time.Sleep(500 * time.Millisecond)
 }
 
 func startChatSession(roomId int32, roomName string) {
@@ -90,7 +158,7 @@ func startChatSession(roomId int32, roomName string) {
 
 	stream, err := grpcClient.JoinRoom(ctx, joinReq)
 	if err != nil {
-		log.Printf("방 입장 또는 생성에 실패했습니다.: %v", err)
+		log.Printf("방 입장 또는 생성에 실패했습니다: %v", err)
 		return
 	}
 
@@ -120,6 +188,8 @@ func startChatSession(roomId int32, roomName string) {
 	}()
 
 	reader := bufio.NewReader(os.Stdin)
+	time.Sleep(300 * time.Millisecond)
+	printRoomHelp()
 	for {
 		//서버 연결이 끊어졌는지 확인
 		select {
@@ -127,6 +197,7 @@ func startChatSession(roomId int32, roomName string) {
 			return
 		default:
 		}
+		fmt.Print(">")
 		text, _ := reader.ReadString('\n')
 		text = strings.TrimSpace(text)
 
@@ -134,12 +205,27 @@ func startChatSession(roomId int32, roomName string) {
 		if ctx.Err() != nil {
 			return
 		}
-		if strings.ToLower(text) == "quit" {
+		if strings.ToLower(text) == "/quit" {
 			log.Println("현재 방에서 퇴장합니다.")
 			return
 		}
-
 		if text == "" {
+			continue
+		}
+		if strings.HasPrefix(text, "/w ") {
+			sendDM(text)
+			continue
+		}
+		if text == "/users" {
+			printAllUsers()
+			continue
+		}
+		if text == "/roomusers" {
+			printRoomUsers(roomId)
+			continue
+		}
+		if text == "/help" {
+			printRoomHelp()
 			continue
 		}
 		//메세지 전송에 Timeout 적용
@@ -156,6 +242,53 @@ func startChatSession(roomId int32, roomName string) {
 	}
 }
 
+func sendDM(input string) {
+	parts := strings.SplitN(input, " ", 3)
+	if len(parts) < 3 {
+		fmt.Println("사용법: /w [대상유저] [메시지]")
+		return
+	}
+	targetUser := parts[1]
+	message := parts[2]
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := grpcClient.SendMessage(ctx, &pb.ChatMessage{
+		SenderUserName: userName,
+		TargetUserId:   targetUser,
+		MessageText:    message,
+	})
+	if err != nil {
+		fmt.Printf("전송 실패: %v\n", err)
+	} else {
+		fmt.Printf("[DM to %s]: %s\n", targetUser, message)
+	}
+}
+
+func printLobbyHelp() {
+	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Println("📍 로비 명령어:")
+	fmt.Println("  create [방이름]            - 새 방 만들기")
+	fmt.Println("  join [방번호]              - 방 입장")
+	fmt.Println("  list                     - 방 목록")
+	fmt.Println("  w [유저명] [메시지]       - DM 보내기")
+	fmt.Println("  users                     - 전체 접속 유저 목록")
+	fmt.Println("  help                       - 도움말")
+	fmt.Println("  quit                  - 종료")
+	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+}
+
+func printRoomHelp() {
+	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Println("💬 채팅방 명령어:")
+	fmt.Println("  /w [유저명] [메시지]       - 방 내 귓속말")
+	fmt.Println("  /users                      - 전체 유저 목록")
+	fmt.Println("  /roomusers                      - 현재 방 유저 목록")
+	fmt.Println("  /help                       - 도움말")
+	fmt.Println("  /quit                       - 방 나가기")
+	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+}
 func printRoomsInfo() {
 	//방 목록 조회에 Timeout 적용
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -176,4 +309,36 @@ func printRoomsInfo() {
 		fmt.Printf("%-5d | %-20s | %-5d\n", room.RoomId, room.RoomName, room.ClientCount)
 	}
 	fmt.Println("----------------------------------------")
+}
+
+func printAllUsers() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := grpcClient.GetAllUsers(ctx, &pb.AllUsersRequest{})
+	if err != nil {
+		log.Printf("전체 유저 목록을 불러오지 못했습니다: %v", err)
+		return
+	}
+	fmt.Println("--- 전체 접속 유저 ---")
+	for _, u := range res.Users {
+		fmt.Printf("- %s\n", u.UserName)
+	}
+	fmt.Println("---------------------")
+}
+
+func printRoomUsers(roomID int32) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := grpcClient.GetRoomUsers(ctx, &pb.RoomUsersRequest{RoomId: roomID})
+	if err != nil {
+		log.Printf("현재 방 유저 목록을 불러오지 못했습니다: %v", err)
+		return
+	}
+	fmt.Println("--- 방 접속 유저 ---")
+	for _, u := range res.Users {
+		fmt.Printf("- %s\n", u.UserName)
+	}
+	fmt.Println("---------------------")
 }
