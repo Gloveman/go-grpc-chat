@@ -8,6 +8,7 @@ package chatpb
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -25,6 +26,8 @@ const (
 	ChatService_JoinRoom_FullMethodName     = "/chat.ChatService/JoinRoom"
 	ChatService_GetRoomUsers_FullMethodName = "/chat.ChatService/GetRoomUsers"
 	ChatService_SendMessage_FullMethodName  = "/chat.ChatService/SendMessage"
+	ChatService_UploadFile_FullMethodName   = "/chat.ChatService/UploadFile"
+	ChatService_DownloadFile_FullMethodName = "/chat.ChatService/DownloadFile"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -41,6 +44,9 @@ type ChatServiceClient interface {
 	GetRoomUsers(ctx context.Context, in *RoomUsersRequest, opts ...grpc.CallOption) (*RoomUsersResponse, error)
 	// 메시지 전송 - 메시지 전송 및 전송 결과 반환
 	SendMessage(ctx context.Context, in *ChatMessage, opts ...grpc.CallOption) (*SendResponse, error)
+	// 파일 전송
+	UploadFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[FileChunk, UploadStatus], error)
+	DownloadFile(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileChunk], error)
 }
 
 type chatServiceClient struct {
@@ -129,6 +135,38 @@ func (c *chatServiceClient) SendMessage(ctx context.Context, in *ChatMessage, op
 	return out, nil
 }
 
+func (c *chatServiceClient) UploadFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[FileChunk, UploadStatus], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ChatService_ServiceDesc.Streams[2], ChatService_UploadFile_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[FileChunk, UploadStatus]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ChatService_UploadFileClient = grpc.ClientStreamingClient[FileChunk, UploadStatus]
+
+func (c *chatServiceClient) DownloadFile(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ChatService_ServiceDesc.Streams[3], ChatService_DownloadFile_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DownloadRequest, FileChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ChatService_DownloadFileClient = grpc.ServerStreamingClient[FileChunk]
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -143,6 +181,9 @@ type ChatServiceServer interface {
 	GetRoomUsers(context.Context, *RoomUsersRequest) (*RoomUsersResponse, error)
 	// 메시지 전송 - 메시지 전송 및 전송 결과 반환
 	SendMessage(context.Context, *ChatMessage) (*SendResponse, error)
+	// 파일 전송
+	UploadFile(grpc.ClientStreamingServer[FileChunk, UploadStatus]) error
+	DownloadFile(*DownloadRequest, grpc.ServerStreamingServer[FileChunk]) error
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -170,6 +211,12 @@ func (UnimplementedChatServiceServer) GetRoomUsers(context.Context, *RoomUsersRe
 }
 func (UnimplementedChatServiceServer) SendMessage(context.Context, *ChatMessage) (*SendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
+}
+func (UnimplementedChatServiceServer) UploadFile(grpc.ClientStreamingServer[FileChunk, UploadStatus]) error {
+	return status.Errorf(codes.Unimplemented, "method UploadFile not implemented")
+}
+func (UnimplementedChatServiceServer) DownloadFile(*DownloadRequest, grpc.ServerStreamingServer[FileChunk]) error {
+	return status.Errorf(codes.Unimplemented, "method DownloadFile not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -286,6 +333,24 @@ func _ChatService_SendMessage_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_UploadFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ChatServiceServer).UploadFile(&grpc.GenericServerStream[FileChunk, UploadStatus]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ChatService_UploadFileServer = grpc.ClientStreamingServer[FileChunk, UploadStatus]
+
+func _ChatService_DownloadFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ChatServiceServer).DownloadFile(m, &grpc.GenericServerStream[DownloadRequest, FileChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ChatService_DownloadFileServer = grpc.ServerStreamingServer[FileChunk]
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -319,6 +384,16 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "JoinRoom",
 			Handler:       _ChatService_JoinRoom_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "UploadFile",
+			Handler:       _ChatService_UploadFile_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "DownloadFile",
+			Handler:       _ChatService_DownloadFile_Handler,
 			ServerStreams: true,
 		},
 	},
