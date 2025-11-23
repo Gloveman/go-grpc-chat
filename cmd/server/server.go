@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 
 	pb "github.com/Gloveman/go-grpc-chat/chatpb"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,6 +24,15 @@ type Room struct {
 	Clients map[string]chan *pb.ChatMessage // Message channel로 재정의
 	mu      sync.RWMutex
 }
+
+type FileMetadata struct {
+	ID           string
+	FileName     string
+	Path         string
+	Owner        string // 보낸 사람
+	RoomID       int32  // 보낸 방
+	TargetUserID string // 받는 사람(DM)
+}
 type server struct {
 	pb.UnimplementedChatServiceServer
 
@@ -30,6 +43,9 @@ type server struct {
 	roomsMu sync.RWMutex
 
 	nextRoomID int32 // 새로운 방 ID 발급을 위한 counter
+
+	files   map[string]*FileMetadata
+	filesMu sync.RWMutex
 }
 
 func main() {
@@ -44,6 +60,7 @@ func main() {
 	s := &server{
 		globalUsers: make(map[string]chan *pb.ChatMessage),
 		rooms:       make(map[int32]*Room),
+		files:       make(map[string]*FileMetadata),
 		nextRoomID:  1, //방 번호는 1번부터 시작
 	}
 
@@ -301,5 +318,170 @@ func (s *server) GetRoomUsers(ctx context.Context, req *pb.RoomUsersRequest) (*p
 		return users[i].UserName < users[j].UserName
 	})
 	return &pb.RoomUsersResponse{Users: users}, nil
+
+}
+
+func (s *server) UploadFile(stream pb.ChatService_UploadFileServer) error {
+	var fileID string
+	var fileName string
+	var filePath string
+	var fileMeta *FileMetadata
+
+	uploadDir := "./uploads"
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		os.Mkdir(uploadDir, 0755)
+	}
+
+	var file *os.File
+	var totalBytes int64
+	const MaxFileSize = 1024 * 1024 * 1024 //1GB 제한
+
+	defer func() {
+		if file != nil {
+			file.Close()
+		}
+		if file != nil && totalBytes < 0 {
+			os.Remove(filePath)
+		}
+	}()
+
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			if file != nil {
+				file.Close()
+				file = nil
+			}
+			if fileID == "" {
+				return status.Errorf(codes.InvalidArgument, "파일 데이터가 없습니다.")
+			}
+
+			s.filesMu.Lock()
+			s.files[fileID] = fileMeta
+			s.filesMu.Unlock()
+
+			message := fmt.Sprintf("파일 저장 완료 (%.2f KB)", float64(totalBytes)/1024.0)
+			//MB 단위인 경우
+			if totalBytes > 1024*1024 {
+				message = fmt.Sprintf("파일 저장 완료 (%.2f MB)", float64(totalBytes)/1024.0/1024.0)
+			}
+			return stream.SendAndClose(&pb.UploadStatus{
+				FileId:  fileID,
+				Success: true,
+				Message: message,
+			})
+		}
+		if err != nil {
+			totalBytes = -1 // Error flag
+			return status.Errorf(codes.Unknown, "파일 수신 중 오류: %v", err)
+		}
+		if info := req.GetInfo(); info != nil {
+			fileName = filepath.Base(info.FileName) // 파일 명만 추출
+			fileID = uuid.New().String()
+			filePath = filepath.Join(uploadDir, fmt.Sprintf("%s_%s", fileID, fileName))
+			file, err = os.Create(filePath)
+			if err != nil {
+				totalBytes = -1
+				return status.Errorf(codes.Internal, "파일 생성 실패: %v", err)
+			}
+
+			fileMeta = &FileMetadata{
+				ID:           fileID,
+				FileName:     fileName,
+				Path:         filePath,
+				RoomID:       info.RoomId,
+				TargetUserID: info.TargetUserId,
+			}
+		} else if chunk := req.GetChunkData(); chunk != nil {
+			if file == nil {
+				totalBytes = -1
+				return status.Errorf(codes.FailedPrecondition, "파일 메타데이터가 먼저 전송되어야 합니다.")
+			}
+			if totalBytes+int64(len(chunk)) > MaxFileSize {
+				totalBytes = -1
+				return status.Errorf(codes.ResourceExhausted, "파일 크기가 제한(%dGB)을 초과했습니다.", MaxFileSize/1024/1024/1024)
+			}
+			n, err := file.Write(chunk)
+			if err != nil {
+				totalBytes = -1
+				return status.Errorf(codes.Internal, "파일 쓰기 실패: %v", err)
+			}
+			totalBytes += int64(n)
+		}
+	}
+}
+
+func (s *server) DownloadFile(req *pb.DownloadRequest, stream pb.ChatService_DownloadFileServer) error {
+	fileID := req.GetFileId()
+	requestUser := req.GetRequestUserName()
+
+	s.filesMu.RLock()
+	meta, ok := s.files[fileID]
+	s.filesMu.RUnlock()
+
+	if !ok {
+		return status.Errorf(codes.NotFound, "파일을 찾을 수 없습니다.")
+	}
+
+	hasAccess := false
+
+	//파일 접근 권한 확인
+	if meta.RoomID > 0 { // 채팅방에서 보낸 경우
+		s.roomsMu.RLock()
+		room, roomOk := s.rooms[meta.RoomID]
+		s.roomsMu.RUnlock()
+
+		if roomOk {
+			room.mu.RLock()
+			_, inRoom := room.Clients[requestUser]
+			room.mu.RUnlock()
+			if inRoom {
+				hasAccess = true
+			}
+		}
+	} else if meta.TargetUserID != "" { // DM으로 보낸 경우
+		if meta.TargetUserID == requestUser {
+			hasAccess = true
+		}
+		if meta.Owner == requestUser { // 보낸 사람도 다운로드 가능하도록 함
+			hasAccess = true
+		}
+	}
+	if !hasAccess {
+		return status.Errorf(codes.PermissionDenied, "파일 다운로드 권한이 없습니다.")
+	}
+
+	file, err := os.Open(meta.Path)
+	if err != nil {
+		return status.Errorf(codes.Internal, "파일 열기 실패")
+	}
+	defer file.Close()
+
+	if err := stream.Send(&pb.FileChunk{
+		Data: &pb.FileChunk_Info{
+			Info: &pb.FileInfo{FileName: meta.FileName},
+		},
+	}); err != nil {
+		return err
+	}
+
+	buf := make([]byte, 64*1024)
+	for {
+		n, err := file.Read(buf)
+		if n > 0 {
+			if err := stream.Send(&pb.FileChunk{
+				Data: &pb.FileChunk_ChunkData{ChunkData: buf[:n]},
+			}); err != nil {
+				return err
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return status.Errorf(codes.Internal, "읽기 오류")
+		}
+	}
+	return nil
 
 }

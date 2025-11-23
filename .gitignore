@@ -24,3 +24,6 @@ go.work.sum
 # Editor/IDE
 .idea/
 .vscode/
+
+#upolad file folder
+uploads/
