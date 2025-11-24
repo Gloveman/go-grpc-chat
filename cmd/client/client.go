@@ -567,7 +567,6 @@ func printLobbyHelp() {
 	fmt.Println("  /w [유저명] [메시지]       - DM 보내기")
 	fmt.Println("  /wfile [유저명]           - DM으로 파일 보내기")
 	fmt.Println("  /download [fileId]        - 파일 다운로드")
-	fmt.Println("  /upload                  - 파일 업로드")
 	fmt.Println("  files                      - 받은 파일 목록")
 	fmt.Println("  users                      - 전체 접속 유저 목록")
 	fmt.Println("  help                       - 도움말")
