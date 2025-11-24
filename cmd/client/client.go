@@ -520,7 +520,14 @@ func uploadAndSend(filePath string, roomId int32, targetUser string) {
 			if err := stream.Send(&pb.FileChunk{
 				Data: &pb.FileChunk_ChunkData{ChunkData: buf[:n]},
 			}); err != nil {
-				log.Printf("데이터 전송 실패: %v", err)
+				if err == io.EOF {
+					_, recvErr := stream.CloseAndRecv()
+					if recvErr != nil {
+						log.Printf("%v", recvErr)
+					}
+				} else {
+					log.Printf("데이터 전송 중 알 수 없는 오류: %v", err)
+				}
 				return
 			}
 		}
@@ -560,6 +567,7 @@ func printLobbyHelp() {
 	fmt.Println("  /w [유저명] [메시지]       - DM 보내기")
 	fmt.Println("  /wfile [유저명]           - DM으로 파일 보내기")
 	fmt.Println("  /download [fileId]        - 파일 다운로드")
+	fmt.Println("  /upload                  - 파일 업로드")
 	fmt.Println("  files                      - 받은 파일 목록")
 	fmt.Println("  users                      - 전체 접속 유저 목록")
 	fmt.Println("  help                       - 도움말")
@@ -574,6 +582,7 @@ func printRoomHelp() {
 	fmt.Println("  /wfile [유저명]       - DM으로 파일 보내기")
 	fmt.Println("  /upload                  - 현재 방에 파일 전송")
 	fmt.Println("  /download [fileId]             - 파일 다운로드")
+	fmt.Println("  /upload                  - 파일 업로드")
 	fmt.Println("  /users                      - 전체 유저 목록")
 	fmt.Println("  /files                      - 받은 파일 목록")
 	fmt.Println("  /roomusers                      - 현재 방 유저 목록")
@@ -598,7 +607,7 @@ func printRoomsInfo() {
 	fmt.Printf("%-5s | %-20s | %s\n", "번호", "이름", "현재 인원")
 	fmt.Println("----------------------------------------")
 	for _, room := range roomsInfo.Rooms {
-		fmt.Printf("%-5d | %-20s | %-5d\n", room.RoomId, room.RoomName, room.ClientCount)
+		fmt.Printf("%-7d | %-20s | %-5d\n", room.RoomId, room.RoomName, room.ClientCount)
 	}
 	fmt.Println("----------------------------------------")
 }

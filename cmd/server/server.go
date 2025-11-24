@@ -365,6 +365,7 @@ func (s *server) UploadFile(stream pb.ChatService_UploadFileServer) error {
 			if totalBytes > 1024*1024 {
 				message = fmt.Sprintf("파일 저장 완료 (%.2f MB)", float64(totalBytes)/1024.0/1024.0)
 			}
+			log.Println(message)
 			return stream.SendAndClose(&pb.UploadStatus{
 				FileId:  fileID,
 				Success: true,
@@ -399,6 +400,7 @@ func (s *server) UploadFile(stream pb.ChatService_UploadFileServer) error {
 			}
 			if totalBytes+int64(len(chunk)) > MaxFileSize {
 				totalBytes = -1
+				log.Println("파일 크기 제한 초과")
 				return status.Errorf(codes.ResourceExhausted, "파일 크기가 제한(%dGB)을 초과했습니다.", MaxFileSize/1024/1024/1024)
 			}
 			n, err := file.Write(chunk)
